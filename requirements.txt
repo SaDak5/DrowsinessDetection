@@ -1,0 +1,7 @@
+tensorflow>=2.10
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+mediapipe #detection exacte des yeux pour eviter le bruit et plus de précision(dans notre sujet)
