@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DrowsyGuard · Détection Temps Réel</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── RESET & VARIABLES ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #080b10;
+  --surface:  #0e1218;
+  --card:     #131820;
+  --border:   #1c2330;
+  --accent:   #00e5c0;
+  --danger:   #ff2d55;
+  --warn:     #ffcc00;
+  --text:     #dde3f0;
+  --muted:    #5a6480;
+  --font-hd:  'Orbitron', monospace;
+  --font-body:'DM Sans', sans-serif;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── SCANLINE OVERLAY ──────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,229,192,0.012) 2px,
+    rgba(0,229,192,0.012) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── HEADER ────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2rem 2.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.logo {
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.logo-icon {
+  width: 36px; height: 36px;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 0 16px rgba(0,229,192,0.25);
+}
+.logo-text {
+  font-family: var(--font-hd);
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.logo-sub {
+  font-size: 0.65rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.header-status {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.3s;
+}
+.dot.live { background: var(--accent); animation: blink 1.2s infinite; }
+@keyframes blink { 0%,100%{ opacity:1; } 50%{ opacity:0.3; } }
+
+/* ── LAYOUT ────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.5rem;
+  padding: 1.5rem 2.5rem;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+/* ── VIDEO PANEL ───────────────────────────────────── */
+.video-panel {
+  display: flex; flex-direction: column; gap: 1rem;
+}
+
+.video-wrapper {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  aspect-ratio: 4/3;
+}
+
+#canvas {
+  width: 100%; height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+video { display: none; }
+
+/* Overlay quand caméra inactive */
+.cam-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 1rem;
+  background: var(--card);
+  transition: opacity 0.4s;
+}
+.cam-placeholder.hidden { opacity: 0; pointer-events: none; }
+
+.cam-icon {
+  font-size: 3.5rem;
+  opacity: 0.2;
+}
+.cam-placeholder p {
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Alert banner */
+.alert-banner {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 0.8rem;
+  text-align: center;
+  font-family: var(--font-hd);
+  font-size: 0.85rem;
+  letter-spacing: 0.15em;
+  background: rgba(255,45,85,0.85);
+  color: #fff;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+}
+.alert-banner.visible { transform: translateY(0); }
+
+/* Corner tag */
+.corner-tag {
+  position: absolute; top: 12px; left: 12px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  backdrop-filter: blur(4px);
+}
+
+/* FPS tag */
+.fps-tag {
+  position: absolute; top: 12px; right: 12px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-family: var(--font-hd);
+  font-size: 0.65rem;
+  color: var(--accent);
+  backdrop-filter: blur(4px);
+}
+
+/* ── CONTROL BUTTONS ───────────────────────────────── */
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.btn {
+  padding: 0.85rem;
+  border-radius: 10px;
+  border: 1px solid;
+  font-family: var(--font-hd);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+.btn-start {
+  background: rgba(0,229,192,0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-start:hover:not(:disabled) {
+  background: rgba(0,229,192,0.18);
+  box-shadow: 0 0 24px rgba(0,229,192,0.25);
+}
+.btn-stop {
+  background: rgba(255,45,85,0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-stop:hover:not(:disabled) {
+  background: rgba(255,45,85,0.18);
+  box-shadow: 0 0 24px rgba(255,45,85,0.25);
+}
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── RIGHT PANEL ───────────────────────────────────── */
+.right-panel {
+  display: flex; flex-direction: column; gap: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+}
+
+.card-title {
+  font-family: var(--font-hd);
+  font-size: 0.65rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1.2rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* STATUS BADGE */
+.status-badge {
+  border-radius: 10px;
+  padding: 1.2rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  transition: all 0.3s;
+  margin-bottom: 1rem;
+}
+.status-label {
+  font-family: var(--font-hd);
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+.status-sub {
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 0.3rem;
+}
+
+.status-badge.idle    { border-color: var(--border); }
+.status-badge.idle .status-label { color: var(--muted); }
+
+.status-badge.awake   {
+  border-color: var(--accent);
+  background: rgba(0,229,192,0.06);
+  box-shadow: 0 0 30px rgba(0,229,192,0.1);
+}
+.status-badge.awake .status-label { color: var(--accent); }
+
+.status-badge.drowsy  {
+  border-color: var(--danger);
+  background: rgba(255,45,85,0.08);
+  box-shadow: 0 0 40px rgba(255,45,85,0.2);
+  animation: pulse-red 1s ease-in-out infinite;
+}
+.status-badge.drowsy .status-label { color: var(--danger); }
+
+@keyframes pulse-red {
+  0%,100% { box-shadow: 0 0 30px rgba(255,45,85,0.2); }
+  50%      { box-shadow: 0 0 60px rgba(255,45,85,0.45); }
+}
+
+/* CONFIDENCE BAR */
+.conf-label {
+  display: flex; justify-content: space-between;
+  font-size: 0.72rem; color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.conf-label span:last-child {
+  font-family: var(--font-hd);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+.bar-bg {
+  background: var(--border);
+  border-radius: 50px;
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 1.2rem;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 50px;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.25s ease, background 0.25s ease;
+}
+
+/* METRICS GRID */
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.metric {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 0.75rem;
+  text-align: center;
+}
+.metric-val {
+  font-family: var(--font-hd);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: block;
+}
+.metric-key {
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 0.2rem;
+  display: block;
+}
+.metric.danger .metric-val { color: var(--danger); }
+
+/* SETTINGS */
+.setting-row {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+}
+.setting-row:last-child { margin-bottom: 0; }
+.setting-label {
+  font-size: 0.75rem; color: var(--muted);
+}
+.setting-val {
+  font-family: var(--font-hd);
+  font-size: 0.75rem;
+  color: var(--accent);
+  min-width: 2.5rem;
+  text-align: right;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border);
+  outline: none;
+  margin: 0 0.75rem;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(0,229,192,0.4);
+}
+
+/* LOG */
+.log-list {
+  list-style: none;
+  display: flex; flex-direction: column; gap: 0.4rem;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.log-list::-webkit-scrollbar { width: 3px; }
+.log-list::-webkit-scrollbar-track { background: transparent; }
+.log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.log-item {
+  display: flex; gap: 0.6rem; align-items: flex-start;
+  font-size: 0.72rem; color: var(--muted);
+  animation: fadeSlide 0.3s ease;
+}
+@keyframes fadeSlide { from { opacity:0; transform:translateY(-4px); } }
+.log-time { color: var(--border); white-space: nowrap; flex-shrink: 0; }
+.log-item.drowsy-log { color: var(--danger); }
+.log-item.awake-log  { color: var(--accent); }
+
+/* AUDIO toggle */
+.audio-row {
+  display: flex; align-items: center; gap: 0.75rem;
+  font-size: 0.75rem; color: var(--muted);
+}
+.toggle {
+  position: relative;
+  width: 38px; height: 20px;
+  flex-shrink: 0;
+}
+.toggle input { opacity:0; width:0; height:0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  left: 3px; bottom: 3px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: 0.3s;
+}
+.toggle input:checked + .toggle-slider { background: rgba(0,229,192,0.2); }
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(18px);
+  background: var(--accent);
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">👁</div>
+    <div>
+      <div class="logo-text">DROWSYGUARD</div>
+      <div class="logo-sub">MobileNetV2 · Haar Cascade</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="dot" id="liveDot"></div>
+    <span id="liveLabel">OFFLINE</span>
+  </div>
+</header>
+
+<!-- MAIN APP -->
+<div class="app">
+
+  <!-- LEFT : VIDEO -->
+  <div class="video-panel">
+    <div class="video-wrapper">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+
+      <!-- Placeholder -->
+      <div class="cam-placeholder" id="placeholder">
+        <div class="cam-icon">📷</div>
+        <p>Caméra inactive — Appuyez sur Start</p>
+      </div>
+
+      <!-- Overlay tags -->
+      <div class="corner-tag">LIVE FEED</div>
+      <div class="fps-tag" id="fpsTag">— FPS</div>
+
+      <!-- Alert banner -->
+      <div class="alert-banner" id="alertBanner">
+        ⚠ SOMNOLENCE DÉTECTÉE — ARRÊTEZ-VOUS
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="controls">
+      <button class="btn btn-start" id="btnStart" onclick="startCamera()">▶ Start Detection</button>
+      <button class="btn btn-stop"  id="btnStop"  onclick="stopCamera()" disabled>⏹ Stop</button>
+    </div>
+  </div>
+
+  <!-- RIGHT : PANEL -->
+  <div class="right-panel">
+
+    <!-- STATUS -->
+    <div class="card">
+      <div class="card-title">⬤ Statut</div>
+      <div class="status-badge idle" id="statusBadge">
+        <div class="status-label" id="statusLabel">— IDLE —</div>
+        <div class="status-sub" id="statusSub">En attente de démarrage</div>
+      </div>
+
+      <div class="conf-label">
+        <span>Confiance (lissée)</span>
+        <span id="confVal">0.00</span>
+      </div>
+      <div class="bar-bg"><div class="bar-fill" id="confBar"></div></div>
+
+      <div class="audio-row">
+        <label class="toggle">
+          <input type="checkbox" id="audioToggle" checked/>
+          <span class="toggle-slider"></span>
+        </label>
+        🔔 Alerte sonore (bip navigateur)
+      </div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="card">
+      <div class="card-title">📊 Session</div>
+      <div class="metrics">
+        <div class="metric">
+          <span class="metric-val" id="mFrames">0</span>
+          <span class="metric-key">Frames</span>
+        </div>
+        <div class="metric">
+          <span class="metric-val" id="mFaces">0</span>
+          <span class="metric-key">Visages</span>
+        </div>
+        <div class="metric">
+          <span class="metric-val" id="mAwake">0</span>
+          <span class="metric-key">Awake</span>
+        </div>
+        <div class="metric danger">
+          <span class="metric-val" id="mDrowsy">0</span>
+          <span class="metric-key">Drowsy</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="card">
+      <div class="card-title">⚙ Paramètres</div>
+
+      <div class="setting-row">
+        <span class="setting-label">Seuil détection</span>
+        <input type="range" id="sThreshold" min="0.2" max="0.8" step="0.05" value="0.4"
+               oninput="document.getElementById('vThreshold').textContent=parseFloat(this.value).toFixed(2)"/>
+        <span class="setting-val" id="vThreshold">0.40</span>
+      </div>
+
+      <div class="setting-row">
+        <span class="setting-label">Lissage (frames)</span>
+        <input type="range" id="sSmoothWin" min="2" max="15" step="1" value="5"
+               oninput="document.getElementById('vSmoothWin').textContent=this.value"/>
+        <span class="setting-val" id="vSmoothWin">5</span>
+      </div>
+
+      <div class="setting-row">
+        <span class="setting-label">Limite somnolence</span>
+        <input type="range" id="sDrowsyLim" min="1" max="10" step="1" value="2"
+               oninput="document.getElementById('vDrowsyLim').textContent=this.value"/>
+        <span class="setting-val" id="vDrowsyLim">2</span>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="card">
+      <div class="card-title">📋 Événements</div>
+      <ul class="log-list" id="logList">
+        <li class="log-item"><span class="log-time">--:--:--</span><span>Système prêt</span></li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- HIDDEN AUDIO for alert -->
+<audio id="beepAudio" preload="auto"></audio>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let stream    = null;
+let running   = false;
+let frameCount = 0, awakeCount = 0, drowsyCount = 0, totalFaces = 0;
+let fpsTimer  = performance.now();
+let fpsFrames = 0;
+let lastState = '';
+
+// Audio context pour bip
+let audioCtx  = null;
+let beepNode  = null;
+let beeping   = false;
+
+const video   = document.getElementById('video');
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d');
+
+// ─── CAMERA ───────────────────────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    await fetch('/reset', { method: 'POST' });
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user', frameRate: 30 }
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+
+    running = true;
+    frameCount = awakeCount = drowsyCount = totalFaces = 0;
+    lastState  = '';
+
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled  = false;
+    document.getElementById('placeholder').classList.add('hidden');
+    document.getElementById('liveDot').classList.add('live');
+    document.getElementById('liveLabel').textContent = 'LIVE';
+
+    addLog('Caméra démarrée', '');
+    requestAnimationFrame(loop);
+
+  } catch (err) {
+    addLog('Erreur caméra : ' + err.message, 'drowsy-log');
+    alert('Impossible d\'accéder à la caméra : ' + err.message);
+  }
+}
+
+function stopCamera() {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+
+  stopBeep();
+  setStatus('idle', '— IDLE —', 'Détection arrêtée');
+  setConfidence(0);
+  hideAlert();
+
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  document.getElementById('placeholder').classList.remove('hidden');
+  document.getElementById('liveDot').classList.remove('live');
+  document.getElementById('liveLabel').textContent = 'OFFLINE';
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  addLog('Caméra arrêtée', '');
+}
+
+// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
+let frameSkip = 0;
+
+async function loop() {
+  if (!running) return;
+
+  frameSkip++;
+  // Skip 1 frame sur 2 (comme realtime_detection.py)
+  if (frameSkip % 2 !== 0) {
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  // Dessiner frame sur canvas
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  frameCount++;
+  fpsFrames++;
+  updateMetrics();
+
+  // FPS counter
+  const now = performance.now();
+  if (now - fpsTimer >= 1000) {
+    document.getElementById('fpsTag').textContent = fpsFrames + ' FPS';
+    fpsFrames = 0;
+    fpsTimer = now;
+  }
+
+  // Encoder en base64
+  const base64 = canvas.toDataURL('image/jpeg', 0.75).split(',')[1];
+
+  try {
+    const res  = await fetch('/predict-realtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64 })
+    });
+    const data = await res.json();
+
+    // Redessiner la frame propre puis overlay
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    if (data.predictions && data.predictions.length > 0) {
+      totalFaces += data.total_faces;
+
+      data.predictions.forEach(p => {
+        const color = p.state === 'DROWSY' ? '#ff2d55' : '#00e5c0';
+
+        // Rectangle visage
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = 2.5;
+        ctx.strokeRect(p.face.x, p.face.y, p.face.w, p.face.h);
+
+        // Label
+        ctx.font      = '600 16px "DM Sans", sans-serif';
+        ctx.fillStyle = color;
+        ctx.fillText(
+          `${p.state}  ${(p.confidence * 100).toFixed(1)}%`,
+          p.face.x + 4,
+          p.face.y - 8
+        );
+
+        // Rectangles yeux (jaune)
+        if (p.eyes && p.eyes.length > 0) {
+          ctx.strokeStyle = '#ffcc00';
+          ctx.lineWidth   = 1.5;
+          p.eyes.forEach(e => ctx.strokeRect(e.x, e.y, e.w, e.h));
+        }
+
+        // Mise à jour UI
+        setConfidence(p.confidence);
+
+        if (p.state === 'DROWSY') {
+          drowsyCount++;
+          setStatus('drowsy', '😴 DROWSY', `Compteur: ${p.drowsy_counter}`);
+          showAlert();
+          startBeep();
+          if (lastState !== 'DROWSY') addLog('⚠ Somnolence détectée', 'drowsy-log');
+        } else if (p.state === 'AWAKE') {
+          awakeCount++;
+          setStatus('awake', '✅ AWAKE', 'Conducteur alerte');
+          hideAlert();
+          stopBeep();
+          if (lastState === 'DROWSY') addLog('✓ Retour à l\'état alerte', 'awake-log');
+        }
+
+        lastState = p.state;
+      });
+
+    } else {
+      setStatus('idle', '🔍 SCANNING', 'Aucun visage détecté');
+      setConfidence(0);
+      hideAlert();
+      stopBeep();
+      lastState = '';
+    }
+
+  } catch (err) {
+    console.warn('API error:', err);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ─── UI HELPERS ───────────────────────────────────────────────────────────────
+function setStatus(cls, label, sub) {
+  const badge = document.getElementById('statusBadge');
+  badge.className = 'status-badge ' + cls;
+  document.getElementById('statusLabel').textContent = label;
+  document.getElementById('statusSub').textContent   = sub;
+}
+
+function setConfidence(val) {
+  const pct   = Math.min(Math.max(val * 100, 0), 100);
+  const bar   = document.getElementById('confBar');
+  const thresh = parseFloat(document.getElementById('sThreshold').value);
+  bar.style.width      = pct + '%';
+  bar.style.background = val > thresh ? '#ff2d55' : '#00e5c0';
+  document.getElementById('confVal').textContent = val.toFixed(3);
+}
+
+function showAlert()  { document.getElementById('alertBanner').classList.add('visible'); }
+function hideAlert()  { document.getElementById('alertBanner').classList.remove('visible'); }
+
+function updateMetrics() {
+  document.getElementById('mFrames').textContent = frameCount;
+  document.getElementById('mFaces').textContent  = totalFaces;
+  document.getElementById('mAwake').textContent  = awakeCount;
+  document.getElementById('mDrowsy').textContent = drowsyCount;
+}
+
+function addLog(msg, cls) {
+  const list = document.getElementById('logList');
+  const now  = new Date().toTimeString().slice(0, 8);
+  const li   = document.createElement('li');
+  li.className = 'log-item ' + (cls || '');
+  li.innerHTML = `<span class="log-time">${now}</span><span>${msg}</span>`;
+  list.prepend(li);
+  while (list.children.length > 20) list.removeChild(list.lastChild);
+}
+
+// ─── BEEP (Web Audio API — remplace winsound) ─────────────────────────────────
+function startBeep() {
+  if (!document.getElementById('audioToggle').checked) return;
+  if (beeping) return;
+  beeping = true;
+
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  function bip() {
+    if (!beeping) return;
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.frequency.value = 1200;
+    gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+    if (beeping) setTimeout(bip, 400);
+  }
+  bip();
+}
+
+function stopBeep() {
+  beeping = false;
+}
+</script>
+</body>
+</html>
