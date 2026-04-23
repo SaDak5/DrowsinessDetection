@@ -1,0 +1,55 @@
+# Ignorer les dossiers et fichiers lors du déploiement sur GCP
+
+# Dataset (volumineux, non nécessaire pour l'inférence)
+
+dataset/
+
+# Fichiers de cache Python
+
+**pycache**/
+_.pyc
+_.pyo
+_.pyd
+.Python
+_.egg-info/
+dist/
+build/
+
+# Environnement virtuel
+
+venv/
+env/
+ENV/
+
+# IDE
+
+.vscode/
+.idea/
+_.swp
+_.swo
+\*~
+
+# Fichiers système
+
+.DS_Store
+.git/
+.gitignore
+
+# Outputs (logs)
+
+outputs/
+
+# Tests
+
+test/
+tests/
+
+# Documentation
+
+\*.md
+docs/
+
+# Configuration locale
+
+.env
+.env.local

@@ -13,11 +13,11 @@ from collections import deque
 app = Flask(__name__, template_folder='templates')
 
 # ─── CONFIG (identique à realtime_detection.py) ───────────────────────────────
-IMG_SIZE     = 224
-THRESHOLD    = float(os.environ.get('THRESHOLD', 0.4))   # même valeur
-SMOOTH_WIN   = 5
+IMG_SIZE = 224
+THRESHOLD = float(os.environ.get('THRESHOLD', 0.4))   # même valeur
+SMOOTH_WIN = 5
 DROWSY_LIMIT = 2
-MODEL_PATH   = os.environ.get('MODEL_PATH', 'models/best_model_mobilenetv2.h5')
+MODEL_PATH = os.environ.get('MODEL_PATH', 'models/best_model_mobilenetv2.h5')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,15 +32,18 @@ except Exception as e:
     model = None
 
 # ─── CASCADE CLASSIFIERS ──────────────────────────────────────────────────────
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-eye_cascade  = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+eye_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_eye.xml')
 
 # ─── SESSION STATE (lissage par session) ──────────────────────────────────────
 # On garde un historique par client (simplifié : global pour démo)
-history        = deque(maxlen=SMOOTH_WIN)
+history = deque(maxlen=SMOOTH_WIN)
 drowsy_counter = 0
 
 # ─── ROUTES ───────────────────────────────────────────────────────────────────
+
 
 @app.route('/')
 def index():
@@ -77,11 +80,11 @@ def predict_realtime():
 
         # ── Décoder l'image ──
         image_bytes = base64.b64decode(data['image'])
-        image       = Image.open(BytesIO(image_bytes))
-        frame       = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        frame       = cv2.resize(frame, (640, 480))
+        image = Image.open(BytesIO(image_bytes))
+        frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        frame = cv2.resize(frame, (640, 480))
 
-        gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = face_cascade.detectMultiScale(
             gray, scaleFactor=1.1, minNeighbors=6, minSize=(100, 100)
         )
@@ -89,10 +92,10 @@ def predict_realtime():
         results = []
 
         for (x, y, w, h) in faces:
-            face      = frame[y:y+h, x:x+w]
+            face = frame[y:y+h, x:x+w]
             gray_face = gray[y:y+h, x:x+w]
 
-            face_r      = cv2.resize(face,      (IMG_SIZE, IMG_SIZE))
+            face_r = cv2.resize(face,      (IMG_SIZE, IMG_SIZE))
             gray_face_r = cv2.resize(gray_face, (IMG_SIZE, IMG_SIZE))
 
             eyes = eye_cascade.detectMultiScale(
@@ -126,7 +129,7 @@ def predict_realtime():
                 })
 
             # ── Lissage identique à realtime_detection.py ──
-            avg_pred    = float(np.mean(eye_preds)) if eye_preds else 0.0
+            avg_pred = float(np.mean(eye_preds)) if eye_preds else 0.0
             history.append(avg_pred)
             stable_pred = float(np.mean(history))
 
@@ -163,11 +166,12 @@ def predict_realtime():
 def not_found(e):
     return jsonify({'error': 'Not found'}), 404
 
+
 @app.errorhandler(500)
 def server_error(e):
     return jsonify({'error': 'Internal server error'}), 500
 
 
-if __name__ == '__main__':
+if _name_ == '_main_':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
