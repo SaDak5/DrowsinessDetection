@@ -1,0 +1,20 @@
+=== Métriques d'évaluation (Test Set — MobileNetV2) ===
+
+Modèle    : D:\drowsiness-detection\models\best_model_mobilenetv2.h5
+Test Loss : 0.0973
+Accuracy  : 0.9590
+AUC-ROC   : 0.9963
+
+=== Rapport de classification ===
+              precision    recall  f1-score   support
+
+       awake       0.93      0.98      0.96       655
+      drowsy       0.98      0.94      0.96       809
+
+    accuracy                           0.96      1464
+   macro avg       0.96      0.96      0.96      1464
+weighted avg       0.96      0.96      0.96      1464
+
+=== Matrice de confusion ===
+[[643  12]
+ [ 48 761]]
